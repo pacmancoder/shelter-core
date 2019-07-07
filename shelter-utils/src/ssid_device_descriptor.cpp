@@ -2,69 +2,91 @@
 
 #include <algorithm>
 
+#include <shelter-utils/buffer_reader.hpp>
 #include <shelter-utils/private/base64.hpp>
+#include <shelter-utils/private/crc8.hpp>
+#include <shelter-utils/buffer_writer.hpp>
 
 using namespace Shelter::Model;
 using namespace Shelter;
 
 namespace
 {
-    constexpr char MAGIC[4] = { 'S', 'H', 'L', 'D' };
+    constexpr char MAGIC[4] = { 'S', 'H', 'L', '_' };
     constexpr size_t BASE64_STRING_SIZE = 28;
     constexpr size_t DESCRIPTOR_BUFFER_SIZE = Utils::GetBase64DecodedOutputSize(BASE64_STRING_SIZE);
 
     bool IsDescriptorChecksumValid(const uint8_t* buffer)
     {
         auto expectedChecksum = buffer[DESCRIPTOR_BUFFER_SIZE - 1];
-
-        uint8_t checksum = 0x00;
-        for (int i = 0; i < DESCRIPTOR_BUFFER_SIZE - 1; ++i)
-        {
-            checksum ^= buffer[i];
-        }
-
-        return expectedChecksum == checksum;
+        auto actualChecksum = Utils::Crc8().Update(buffer, DESCRIPTOR_BUFFER_SIZE - 1).Get();
+        return expectedChecksum == actualChecksum;
     }
 
-    uint32_t Uint32FromLittleEndian(uint8_t* v)
+    DeviceDescriptor ReadDeviceDescriptor(Utils::BufferReader& buffer)
     {
-        return static_cast<uint32_t>(v[0]) << 0
-            | static_cast<uint32_t>(v[1]) << 8
-            | static_cast<uint32_t>(v[2]) << 16
-            | static_cast<uint32_t>(v[3]) << 24;
+        return {
+            ShelterVersion {
+                buffer.Read<uint8_t>(),
+                buffer.Read<uint8_t>(),
+                buffer.Read<uint8_t>()
+            },
+            Service { buffer.Read<uint8_t>() },
+            DeviceClass { buffer.Read<uint32_t>() },
+            DeviceVendor { buffer.Read<uint32_t>() },
+            DeviceSerial { buffer.Read<uint64_t>() }
+        };
     }
 
-    uint64_t Uint64FromLittleEndian(uint8_t* v)
+    void WriteDeviceDescriptor(const DeviceDescriptor& descriptor, Utils::BufferWriter& buffer)
     {
-        return static_cast<uint64_t>(v[0]) << 0
-            | static_cast<uint64_t>(v[1]) << 8
-            | static_cast<uint64_t>(v[2]) << 16
-            | static_cast<uint64_t>(v[3]) << 24
-            | static_cast<uint64_t>(v[4]) << 32
-            | static_cast<uint64_t>(v[5]) << 40
-            | static_cast<uint64_t>(v[6]) << 48
-            | static_cast<uint64_t>(v[7]) << 56;
+        buffer.Write<uint8_t>(descriptor.version.GetMajor());
+        buffer.Write<uint8_t>(descriptor.version.GetMinor());
+        buffer.Write<uint8_t>(descriptor.version.GetPatch());
+        buffer.Write<uint8_t>(static_cast<uint8_t>(descriptor.service.GetId()));
+        buffer.Write<uint32_t>(static_cast<uint32_t>(descriptor.deviceClass.GetId()));
+        buffer.Write<uint32_t>(static_cast<uint32_t>(descriptor.vendor.GetId()));
+        buffer.Write<uint64_t>(descriptor.serial.GetValue());
     }
+
 }
 
 DeviceDescriptor Utils::DecodeDeviceDescriptorFromSsid(const Ssid& ssid)
 {
     if (!std::equal(ssid.data(), ssid.data() + sizeof(MAGIC), MAGIC))
     {
-        std::terminate();
+        throw WrongSsidMagicError();
     }
 
-    uint8_t descriptorBuffer[DESCRIPTOR_BUFFER_SIZE] = {};
-    DecodeBase64(ssid.data() + sizeof(MAGIC), BASE64_STRING_SIZE, descriptorBuffer);
+    uint8_t rawBuffer[DESCRIPTOR_BUFFER_SIZE] = {};
+    DecodeBase64(ssid.data() + sizeof(MAGIC), BASE64_STRING_SIZE, rawBuffer);
 
-    if (!IsDescriptorChecksumValid(descriptorBuffer))
+    if (!IsDescriptorChecksumValid(rawBuffer))
     {
-        std::terminate();
+        throw WrongSsidPayloadChecksumError();
     }
 
-    return DeviceDescriptor {
-        Uint32FromLittleEndian(descriptorBuffer),
-        Uint32FromLittleEndian(descriptorBuffer + sizeof(uint32_t)),
-        Uint64FromLittleEndian(descriptorBuffer + sizeof(uint32_t) * 2)
-    };
+    Utils::BufferReader buffer(rawBuffer, DESCRIPTOR_BUFFER_SIZE, Utils::ByteOrder::BE);
+    return ReadDeviceDescriptor(buffer);
+}
+
+Utils::Ssid Utils::EncodeDeviceDescriptorToSsid(const Model::DeviceDescriptor& descriptor)
+{
+    Ssid ssid = {{}};
+    std::copy(MAGIC, MAGIC + sizeof(MAGIC), ssid.data());
+
+    uint8_t rawBuffer[DESCRIPTOR_BUFFER_SIZE] = {};
+
+    // max write buffer size specified without checksum byte
+    Utils::BufferWriter buffer(rawBuffer, DESCRIPTOR_BUFFER_SIZE - 1, ByteOrder::BE);
+
+    WriteDeviceDescriptor(descriptor, buffer);
+
+    // write resulting checksum to the last byte
+    rawBuffer[DESCRIPTOR_BUFFER_SIZE - 1] =
+        Crc8().Update(rawBuffer, DESCRIPTOR_BUFFER_SIZE - 1).Get();
+
+    EncodeBase64(rawBuffer, DESCRIPTOR_BUFFER_SIZE, ssid.data() + sizeof(MAGIC));
+
+    return ssid;
 }

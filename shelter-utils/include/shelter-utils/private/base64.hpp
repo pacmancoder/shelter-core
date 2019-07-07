@@ -5,18 +5,19 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace Shelter { namespace Utils {
+namespace Shelter { namespace Utils
+{
 
     /// Calculates encoded Base64 size from source buffer size
     /// @warning result size does not include null terminator
-    constexpr size_t GetBase64EncodedOutputSize(size_t sourceSize)
+    constexpr size_t GetBase64EncodedOutputSize(size_t sourceSize) noexcept
     {
         return (((sourceSize) + 2) / 3) * 4;
     }
 
     /// Calculates decoded Base64 buffer size from source text
     /// @warning source should not include null terminator
-    constexpr size_t GetBase64DecodedOutputSize(size_t sourceSize)
+    constexpr size_t GetBase64DecodedOutputSize(size_t sourceSize) noexcept
     {
         return ((sourceSize) / 4) * 3;
     }
