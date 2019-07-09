@@ -15,6 +15,9 @@ BufferReader::StepResult BufferReader::PerformStep(size_t step)
     return NoError {};
 }
 
+namespace Shelter { namespace Utils
+{
+
 template <>
 BufferReader::ReadResult<uint8_t> BufferReader::Read<ByteOrder::BE, uint8_t>()
 {
@@ -81,3 +84,5 @@ BufferReader::ReadResult<uint64_t> BufferReader::Read<ByteOrder::BE, uint64_t>()
         )
     );
 }
+
+}}

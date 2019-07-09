@@ -15,6 +15,9 @@ BufferWriter::StepResult BufferWriter::PerformStep(size_t step)
     return NoError {};
 }
 
+namespace Shelter { namespace Utils
+{
+
 template <>
 BufferWriter::WriteResult BufferWriter::Write<ByteOrder::BE, uint8_t>(uint8_t value)
 {
@@ -63,3 +66,5 @@ BufferWriter::WriteResult BufferWriter::Write<ByteOrder::BE, uint64_t>(uint64_t 
 
     return stepResult;
 }
+
+}}
