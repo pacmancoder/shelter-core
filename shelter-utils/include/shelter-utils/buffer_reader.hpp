@@ -1,7 +1,10 @@
 #pragma once
 
-#include <shelter-model/error.hpp>
 #include <shelter-utils/byte_order.hpp>
+
+#include <shelter-model/error.hpp>
+
+#include <exl/mixed.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -11,20 +14,41 @@ namespace Shelter { namespace Utils
     class BufferReader
     {
     public:
-        BufferReader(const uint8_t* buffer, size_t bufferSize, ByteOrder defaultByteOrder)
-            : buffer_(buffer)
-            , bufferSize_(bufferSize)
-            , byteOrder_(defaultByteOrder)
-            , pos_(0)
+        class NotSupportedByteOrderError : public NotSupportedError {};
+        class InvalidBufferError : public InvalidArgumentError {};
+        class BufferOutOfBoundsError : public OutOfBoundsError {};
+
+        using ConstructionResult =
+            exl::mixed<BufferReader, NotSupportedByteOrderError, InvalidBufferError>;
+
+        friend ConstructionResult;
+
+        template <typename T>
+        using ReadResult =
+            exl::mixed<T, BufferOutOfBoundsError, NotSupportedByteOrderError>;
+
+    public:
+        static ConstructionResult Make(
+            const uint8_t* buffer,
+            size_t bufferSize,
+            ByteOrder defaultByteOrder
+        )
         {
             if (defaultByteOrder != ByteOrder::BE)
             {
-                ThrowLENotSupported();
+                return NotSupportedByteOrderError {};
             }
-        };
+
+            if (buffer == nullptr)
+            {
+                return InvalidBufferError {};
+            }
+
+            return ConstructionResult::make<BufferReader>(buffer, bufferSize, defaultByteOrder);
+        }
 
         template <typename T>
-        T Read(ByteOrder byteOrder = ByteOrder::Default)
+        ReadResult<T> Read(ByteOrder byteOrder = ByteOrder::Default)
         {
             if (byteOrder == ByteOrder::Default)
             {
@@ -36,17 +60,24 @@ namespace Shelter { namespace Utils
                 return Read<ByteOrder::BE, T>();
             }
 
-            ThrowLENotSupported();
+            return NotSupportedByteOrderError {};
         }
 
     private:
-        [[noreturn]]
-        static void ThrowLENotSupported();
-        void PerformStep(size_t step);
+        using StepResult = exl::mixed<NoError, BufferOutOfBoundsError>;
+
+    private:
+        BufferReader(const uint8_t* buffer, size_t bufferSize, ByteOrder defaultByteOrder)
+            : buffer_(buffer)
+            , bufferSize_(bufferSize)
+            , byteOrder_(defaultByteOrder)
+            , pos_(0) {};
+
+        StepResult PerformStep(size_t step);
 
     private:
         template <ByteOrder B, typename T>
-        T Read();
+        ReadResult<T> Read();
 
     private:
         const uint8_t* buffer_;

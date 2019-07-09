@@ -23,18 +23,39 @@ namespace
         return expectedChecksum == actualChecksum;
     }
 
-    DeviceDescriptor ReadDeviceDescriptor(Utils::BufferReader& buffer)
+    Utils::DecodeSsidResult ReadDeviceDescriptor(Utils::BufferReader& buffer)
     {
-        return {
+        auto majorVersion = buffer.Read<uint8_t>();
+        auto minorVersion = buffer.Read<uint8_t>();
+        auto patchVersion = buffer.Read<uint8_t>();
+
+        auto service = buffer.Read<uint8_t>();
+
+        auto deviceClass = buffer.Read<uint32_t>();
+        auto deviceVendor = buffer.Read<uint32_t>();
+        auto deviceSerial = buffer.Read<uint64_t>();
+
+        if ((!minorVersion.is<uint8_t>())
+            || (!minorVersion.is<uint8_t>())
+            || (!patchVersion.is<uint8_t>())
+            || (!service.is<uint8_t>())
+            || (!deviceClass.is<uint32_t>())
+            || (!deviceVendor.is<uint32_t>())
+            || (!deviceSerial.is<uint64_t>()))
+        {
+            return Utils::SsidInvalidBufferError {};
+        }
+
+        return DeviceDescriptor {
             ShelterVersion {
-                buffer.Read<uint8_t>(),
-                buffer.Read<uint8_t>(),
-                buffer.Read<uint8_t>()
+                majorVersion.unwrap<uint8_t>(),
+                minorVersion.unwrap<uint8_t>(),
+                patchVersion.unwrap<uint8_t>()
             },
-            Service { buffer.Read<uint8_t>() },
-            DeviceClass { buffer.Read<uint32_t>() },
-            DeviceVendor { buffer.Read<uint32_t>() },
-            DeviceSerial { buffer.Read<uint64_t>() }
+            Service { service.unwrap<uint8_t>() },
+            DeviceClass { deviceClass.unwrap<uint32_t>() },
+            DeviceVendor { deviceVendor.unwrap<uint32_t>() },
+            DeviceSerial { deviceSerial.unwrap<uint64_t>() }
         };
     }
 
@@ -51,11 +72,11 @@ namespace
 
 }
 
-DeviceDescriptor Utils::DecodeDeviceDescriptorFromSsid(const Ssid& ssid)
+Utils::DecodeSsidResult Utils::DecodeDeviceDescriptorFromSsid(const Ssid& ssid)
 {
     if (!std::equal(ssid.data(), ssid.data() + sizeof(MAGIC), MAGIC))
     {
-        throw WrongSsidMagicError();
+        return Utils::SsidWrongMagicError {};
     }
 
     uint8_t rawBuffer[DESCRIPTOR_BUFFER_SIZE] = {};
@@ -63,11 +84,18 @@ DeviceDescriptor Utils::DecodeDeviceDescriptorFromSsid(const Ssid& ssid)
 
     if (!IsDescriptorChecksumValid(rawBuffer))
     {
-        throw WrongSsidPayloadChecksumError();
+        return Utils::SsidWrongPayloadChecksumError {};
     }
 
-    Utils::BufferReader buffer(rawBuffer, DESCRIPTOR_BUFFER_SIZE, Utils::ByteOrder::BE);
-    return ReadDeviceDescriptor(buffer);
+    auto buffer =
+        Utils::BufferReader::Make(rawBuffer, DESCRIPTOR_BUFFER_SIZE, Utils::ByteOrder::BE);
+
+    if (!buffer.is<BufferReader>())
+    {
+        return SsidInvalidBufferError {};
+    }
+
+    return ReadDeviceDescriptor(buffer.unwrap<BufferReader>());
 }
 
 Utils::Ssid Utils::EncodeDeviceDescriptorToSsid(const Model::DeviceDescriptor& descriptor)
@@ -78,9 +106,19 @@ Utils::Ssid Utils::EncodeDeviceDescriptorToSsid(const Model::DeviceDescriptor& d
     uint8_t rawBuffer[DESCRIPTOR_BUFFER_SIZE] = {};
 
     // max write buffer size specified without checksum byte
-    Utils::BufferWriter buffer(rawBuffer, DESCRIPTOR_BUFFER_SIZE - 1, ByteOrder::BE);
+    auto buffer = Utils::BufferWriter::Make(
+        rawBuffer,
+        DESCRIPTOR_BUFFER_SIZE - 1,
+        ByteOrder::BE
+    );
 
-    WriteDeviceDescriptor(descriptor, buffer);
+    if (!buffer.is<BufferWriter>())
+    {
+        // Raw buffer length will be always sufficient for SSID encoding
+        std::terminate();
+    }
+
+    WriteDeviceDescriptor(descriptor, buffer.unwrap<BufferWriter>());
 
     // write resulting checksum to the last byte
     rawBuffer[DESCRIPTOR_BUFFER_SIZE - 1] =

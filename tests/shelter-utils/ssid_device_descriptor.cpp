@@ -15,7 +15,11 @@ TEST_CASE("Shelter SSID is parsed correctly", "[shelter-utils]")
     Ssid ssid = {{}};
     std::copy(ssidString, ssidString + ssid.size(), ssid.data());
 
-    auto descriptor = DecodeDeviceDescriptorFromSsid(ssid);
+    auto descriptorResult = DecodeDeviceDescriptorFromSsid(ssid);
+
+    REQUIRE(descriptorResult.is<DeviceDescriptor>());
+
+    auto& descriptor = descriptorResult.unwrap<DeviceDescriptor>();
 
     REQUIRE(descriptor.version.GetMajor() == 1);
     REQUIRE(descriptor.version.GetMinor() == 0);
@@ -27,12 +31,13 @@ TEST_CASE("Shelter SSID is parsed correctly", "[shelter-utils]")
     REQUIRE(descriptor.serial.GetValue() == 0x1122334455667788LL);
 }
 
+
 TEST_CASE("SSID parsing throws on wrong magic", "[shelter-utils]")
 {
     const char* ssidString = "ABS_AQAAAQAAAAEAAAABESIzRFVmd4gY";
     Ssid ssid = {{}};
     std::copy(ssidString, ssidString + ssid.size(), ssid.data());
-    REQUIRE_THROWS_AS(DecodeDeviceDescriptorFromSsid(ssid), WrongSsidMagicError);
+    REQUIRE(DecodeDeviceDescriptorFromSsid(ssid).is<SsidWrongMagicError>());
 }
 
 TEST_CASE("SSID parsing throws on wrong checksum", "[shelter-utils]")
@@ -40,7 +45,7 @@ TEST_CASE("SSID parsing throws on wrong checksum", "[shelter-utils]")
     const char* ssidString = "SHL_AQAAAQAAAAEAAAABESIzRFVmd4gK";
     Ssid ssid = {{}};
     std::copy(ssidString, ssidString + ssid.size(), ssid.data());
-    REQUIRE_THROWS_AS(DecodeDeviceDescriptorFromSsid(ssid), WrongSsidPayloadChecksumError);
+    REQUIRE(DecodeDeviceDescriptorFromSsid(ssid).is<SsidWrongPayloadChecksumError>());
 }
 
 TEST_CASE("Shelter SSID is constructed correctly", "[shelter-utils]")

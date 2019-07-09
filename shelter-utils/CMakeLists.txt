@@ -14,4 +14,4 @@ target_sources(
     src/crc8.cpp
 )
 
-target_link_libraries(${PROJECT_NAME} shelter-model)
+target_link_libraries(${PROJECT_NAME} shelter-model exl)

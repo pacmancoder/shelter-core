@@ -1,52 +1,34 @@
 #pragma once
 
+#include <shelter-utils/buffer_reader.hpp>
+
 #include <shelter-model/device_descriptor.hpp>
 #include <shelter-model/error.hpp>
 
-#include <shelter-utils/buffer_reader.hpp>
+#include <exl/mixed.hpp>
 
 #include <cstdint>
 #include <array>
 
 namespace Shelter { namespace Utils
 {
-    class SsidParsingError : public Error
-    {
-    public:
-        SsidParsingError()
-            : Error(nullptr) {}
-    };
+    class SsidParsingError : public Error {};
 
-    class WrongSsidMagicError : public SsidParsingError
-    {
-    private:
-        void DescribeCause(std::ostream& out) const override
-        {
-            out << "SSID has wrong magic";
-        }
+    class SsidWrongMagicError : public SsidParsingError {};
 
-        void DescribeName(std::ostream& out) const override
-        {
-            out << "WrongSsidMagicError";
-        }
-    };
+    class SsidWrongPayloadChecksumError : public SsidParsingError {};
 
-    class WrongSsidPayloadChecksumError : public SsidParsingError
-    {
-    private:
-        void DescribeCause(std::ostream& out) const override
-        {
-            out << "SSID payload has wrong checksum";
-        }
-
-        void DescribeName(std::ostream& out) const override
-        {
-            out << "WrongSsidPayloadChecksumError";
-        }
-    };
+    class SsidInvalidBufferError : public SsidParsingError {};
 
     using Ssid = std::array<char, 32>;
 
-    Model::DeviceDescriptor DecodeDeviceDescriptorFromSsid(const Ssid& ssid);
+    using DecodeSsidResult = exl::mixed<
+        Model::DeviceDescriptor,
+        SsidWrongMagicError,
+        SsidWrongPayloadChecksumError,
+        SsidInvalidBufferError
+    >;
+
+    DecodeSsidResult DecodeDeviceDescriptorFromSsid(const Ssid& ssid);
     Ssid EncodeDeviceDescriptorToSsid(const Model::DeviceDescriptor& descriptor);
 }}
